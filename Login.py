@@ -9,7 +9,7 @@ cursor.execute("DROP TABLE IF EXISTS Login")
 sql = """CREATE TABLE Login (
          User_id INT NOT NULL AUTO_INCREMENT,
          User_name  CHAR(20) NOT NULL,
-         User_passwor CHAR(20) NOT NULL,
+         User_password CHAR(20) NOT NULL,
          PRIMARY KEY(User_id))"""     #MYSQL命令语句 建表
 cursor.execute(sql)
 
