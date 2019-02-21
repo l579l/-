@@ -26,10 +26,11 @@ async def login(request):
         sql2 = "SELECT User_password FROM Login WHELE User_name = 'Username'"
         cursor.execute(sql2)
         User= cursor.fetchone()
-        if Username== User[0] and Password == User[1]:
-            return response.redirect('/file')
+        if Username == User[0] and Password == User[1]:
+            return response.redirect("登陆成功！")
         else:
             return response.text("帐号或者密码有误！")
+
 db.close()
 
 if __name__ =='__main__':
