@@ -1,0 +1,189 @@
+#-*- coding: UTF-8 -*-
+import pymysql
+import pymysql.cursors
+import Config   #配置文件
+from DBUtils.PooledDB import PooledDB  #使用数据池,增加并发性
+
+
+class mysqlConnPool():
+    """
+    定义数据库的通用接口：       
+        MYSQL数据库对象，负责产生数据库连接 , 此类中的连接采用连接池实现
+        获取连接对象：conn = Mysql.getConn()
+        释放连接对象;conn.close()或del conn
+    """
+    __pool = None
+    def __init__(self):
+        self._conn = self.__getConn()
+        self._cursor = self._conn.cursor()
+
+    ##@staticmethod
+    def __getConn(self):
+        """
+        @summary: 静态方法，从连接池中取出连接
+        @return pymysql.connection
+        """
+        if self.__pool is None:
+            __pool = PooledDB(creator=pymysql, mincached=Config.DB_MIN_CACHED , maxcached=Config.DB_MAX_CACHED,
+                               maxshared=Config.DB_MAX_SHARED, maxconnections=Config.DB_MAX_CONNECYIONS,
+                               blocking=Config.DB_BLOCKING, maxusage=Config.DB_MAX_USAGE,
+                               setsession=Config.DB_SET_SESSION,
+                               host=Config.DBHOST , port=Config.DBPORT ,
+                               user=Config.DBUSER , passwd=Config.DBPASSWORD ,
+                               db=Config.DBDBNAME , use_unicode=True,
+                               charset=Config.DB_CHARSET, cursorclass=eval(Config.CURSOR_TYPE));
+        return __pool.connection()  #返回db连接对象
+
+    @staticmethod
+    def dictHandler(dictData,mode='equal',opeChar=' AND '):
+        '''将字典变换成sql格式的字符串,
+        判断字典值是数值还是字符串，决定是否加引号'''
+        if mode == 'equal': #"a=b "样式
+            sqlStr=""
+            num_char = -len(opeChar)
+            for key,value in dictData.items():
+                if isinstance(value,str):
+                    jointStr = "%s='%s'"%(key,value)
+                else:
+                    jointStr = "%s=%s"%(key,value)
+                sqlStr = sqlStr + jointStr + opeChar
+            return sqlStr[:num_char]
+
+        if mode == 'parentheses': #((key,key),(value,vaue))样式
+            keyList = "(";valueList = []
+            for key,value in dictData.items():
+                if len(dictData)==1:
+                    if isinstance(value,str):reVal="('%s')"%value
+                    else:reVal = "(%s)"%value
+                    return ("("+key+")",reVal)
+                else:
+                    keyList = keyList + key + ","
+                valueList.append(value)
+            return (keyList[:-1]+")",tuple(valueList))
+
+
+
+    def apply(self,argd,MODE='query'):
+        '''
+            插入操作时必须插入主键(有默认除外)
+                                    '''
+        MODE=MODE.lower()
+        if MODE not in ('query','modify','insert','delete','sql') or (not argd):
+            raise Exception('输入有误或缺少参数')  #输入错误
+
+    #----执行查询操作，argd结构(表名,列名or(列名,列名..),{列名：值})(后两个可选)-------   
+        if MODE == 'query':
+            if len(argd) == 1:
+                sql="SELECT * FROM %s"%argd[0]
+            elif len(argd) == 2:
+                if not isinstance(argd[1],dict):
+                    if isinstance(argd[1],str):
+                        sql = "SELECT %s FROM %s"%(argd[1],argd[0])
+                    else:
+                        temp = ','.join(('%s',)*len(argd[1]))
+                        sql = ("SELECT "+temp+" FROM %s")%(*argd[1],argd[0])
+                else:
+                    sql = "SELECT * FROM %s WHERE "%argd[0]
+                    sql = sql + self.dictHandler(argd[1])
+            elif len(argd) == 3:
+                if isinstance(argd[1],str):
+                    sql = "SELECT %s FROM %s WHERE "%(argd[1],argd[0])
+                else:
+                    temp = ','.join(('%s',)*len(argd[1]))
+                    sql = ("SELECT "+temp+" FROM %s WHERE ")%(*argd[1],argd[0])    
+                sql = sql + self.dictHandler(argd[2])
+            else:
+                raise Exception('待查询参数输入数量有误')
+            try:
+                self._cursor.execute(sql)
+            except:
+                raise Exception('输入格式错误或者表名、列名不存在')#输入格式错误或表名不存在
+            re=self._cursor.fetchall()
+            return re
+
+    #----修改数据库,argd结构(表名，{列名：要修改值},{列名：条件值})        
+        if MODE == 'modify':
+            if len(argd) == 2:
+                CHECK = input("您即将修改表中的整列数据，请问是否继续？[y/n]")
+                if not CHECK.startswith('y'):
+                    print('操作失败')
+                    return False
+                sql = "UPDATE %s SET "%argd[0]
+                sql = sql + self.dictHandler(argd[1])
+            elif len(argd) ==3:
+                sqlChange = self.dictHandler(argd[1],opeChar=",")
+                sqlChoose = self.dictHandler(argd[2])
+                sql = "UPDATE %s SET "%argd[0]
+                sql = sql + sqlChange + " WHERE " + sqlChoose
+            else:
+                raise Exception('输入参数个数有误')
+            try:
+                aff_line = self._cursor.execute(sql)
+            except:
+                raise Exception('输入格式错误或者表名、列名不存在')#输入格式错误或表名不存在
+            if aff_line:
+                return True
+            else:
+                return False
+     
+        # 插入数据库，argd结构(表名,{键：值})
+        if MODE in ('insert','delete'):
+            if not len(argd) == 2:raise Exception('输入参数个数有误')
+            if MODE == 'insert':
+                sql = "INSERT INTO %s "%argd[0]
+                insertTuple = self.dictHandler(argd[1],'parentheses')
+                sql = sql + str(insertTuple[0]) + ' VALUES ' + str(insertTuple[1])
+            else:
+                sql = "DELETE FROM %s WHERE "%argd[0]
+                sql = sql + self.dictHandler(argd[1],'equal')
+            try:
+                print(sql)
+                aff_line = self._cursor.execute(sql)
+            except:
+               raise Exception('输入格式错误或者表名、列名不存在,或插入主键有误')
+            if aff_line:
+                return True
+            else:
+                return False
+
+
+       #手动输入sql语句操作
+        if MODE == 'sql':
+            if not isinstance(argd,str):
+                raise Exception('输入sql语句格式不对')
+            try:
+                aff_line=self._cursor.execute(argd)
+            except:
+                raise Exception('SQL语法错误')
+            re = self._cursor.fetchall()
+            if re:
+                return re
+            return True        
+
+
+    def begin(self):
+        """
+        @summary: 开启事务,关闭自动提交
+        """
+        self._conn.autocommit(0)
+
+    def end(self,option='commit'):
+        """
+        @summary: 结束事务
+        """
+        if option=='commit':
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+
+    def close(self,isEnd=1):
+        """
+        @summary: 释放连接池资源
+        """
+        if isEnd==1:
+            self.end('commit')
+        else:
+            self.end('rollback');
+        self._cursor.close()
+        self._conn.close()
+        

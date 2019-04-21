@@ -1,0 +1,19 @@
+#coding=utf-8
+
+#web服务器配置
+WEB_HOSTNAME= '0.0.0.0'
+WEB_PORT    = 8889
+
+#mysql配置
+MQSQL_HOSTNAME="39.107.121.203"
+MYSQL_PORT=3306
+MYSQL_CONNECT="mysql+pymysql://lab202:123123@"+MQSQL_HOSTNAME+":3306/zxzldb_new?charset=utf8"
+
+#mqtt配置
+MQTT_CLIENTNAME="shensy:"
+MQTT_HOSTNAME='39.107.121.203'
+MQTT_PORT=1883
+
+#redis配置
+REDIS_HOSTNAME='39.107.121.203'
+REDIS_PORT=6379
